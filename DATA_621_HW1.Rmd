@@ -1,0 +1,325 @@
+---
+title: "DATA 621 - Homework 1"
+author: "Paul Britton"
+date: "2019-09-14"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r message=FALSE,warning=FALSE}
+rm(list = ls(all.names = TRUE)) 
+library(psych)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(corrr)
+library(DescTools)
+```
+
+
+
+# Overview
+
+In this homework assignment, I will explore, analyze and model a data set containing approximately 2200
+records. Each record represents a professional baseball team from the years 1871 to 2006 inclusive. Each record
+has the performance of the team for the given year, with all of the statistics adjusted to match the performance of
+a 162 game season.
+The objective is to build a multiple linear regression model on the training data to predict the number of wins
+for the team. You can only use the variables given to you (or variables that you derive from the variables
+provided). 
+
+
+# Data Exploration
+
+### Load and Inspect the Data
+
+The first objective is to load the data and evaluate what we're looking at and working with.  We want to inspect a small sample to make sure that the data has loaded correctly and that it looks coherent. 
+
+```{r}
+#load the data from file
+data.train <- read.table("C:/Users/Paul/OneDrive - CUNY School of Professional Studies/CUNY/DATA 621/HW1/moneyball-training-data.csv",sep=',', header = 1, row.names = 1)
+
+#display the first few rows as a coherence check
+head(data.train,5)
+```
+
+
+The sample looks okay - we have 16 columns of data which appears to be well formatted for the most part.  We can see that there are a few "NA"s in there so we will need to figure out how to deal with those.
+
+
+### Summary Statistics
+
+We'll use the psych::describe() function to get a comprehensive output of simple summary statistics.  There are numerous ways to get similar summaries in R but I find this one to be reasonably complete:
+
+```{r}
+stats <- psych::describe(data.train)
+stats
+```
+
+On the surface, we can see a few things from this summary:
+*There are some variables where the max is way out of line with the measures of cental tendency (mean/median)
+*several variables have incomplete observations (HBP, CS etc...)
+
+
+We need to figure out how do address these issues.
+
+
+First we'll look for outliers:
+
+```{r}
+#create a barplot to highlight 
+n<-ggplot(data=stats, aes(x=rownames(stats), y=max/median)) +
+  geom_bar(stat="identity") +
+  ggtitle("Max vs Median - Looking for Outliers") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+n
+```
+
+This plot tells us that there are a few suspicious variables.  It might make more sense to look at something like boxplots here to get a sense as to whether some of these variables are just extremely skewed, or whether we have a few issues with outliers here.    
+
+```{r}
+
+#tidy the data.train
+data.train.tidy <- data.train %>%
+  gather()
+
+
+#build a boxplot from our reformatted data.train
+n<-ggplot(data=data.train.tidy, aes(x=key, y=value)) +
+  geom_boxplot()+
+  ggtitle("Looking for Outliers - Boxplot") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+n
+```
+
+Here we see that we likely have some issues with outliers in a few columns.  TEAM_PITCHING_HITS and TEAM_PITCHING_STRIKEOUTS seem like the most obvious potential errors.  Some quick arithmetic tells us that there are likely some legitimate errors here - if we (VERY roughly) assume that teams play 140 games per year, 50 at-bats per game we get 7000 events in a season, which suggests that 30K events, as we see in TEAM_PITCHING_HITS, might be an erroneous entry.
+
+Next we'll look at the completeness of the data via the raw count of items per column:
+
+```{r}
+#plot the raw number of obs per col
+n<-ggplot(data=stats, aes(x=rownames(stats), y=n)) +
+  geom_bar(stat="identity") +
+  ggtitle("Number of Observations Per Variable") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+n
+```
+
+We can see that a few of the columns, notably HBP (hit by pitch), have less than a full set of records.  This might be something worth considering when trying to choose predictive variables in the sense that the fewer observations we see for a given variable, the greater the potential for bias due to a small sample size.
+
+This information is also valuable in letting us know where we might need to perform some data-prep operations.
+
+###Correlation to Target
+
+Next we'll look at a visualization of the correlation of each variable to the target variable.  Note that I had originally tried to do this via the pairs() function but it produced an uncomfortably crowded plot so I decided to go with a bar plot instead
+
+
+```{r}
+
+#compute correlation to the target var
+cor <- data.train %>% 
+  correlate() %>% 
+  focus(TARGET_WINS)
+
+#create a barplot showing the correlation of the target to each variable
+cor %>% 
+  mutate(rowname = factor(rowname, levels = rowname[order(TARGET_WINS)])) %>% 
+  ggplot(aes(x = rowname, y = TARGET_WINS)) +
+    geom_bar(stat = "identity") +
+    ylab("Correlation with Target Wins") +
+    xlab("Variable")+
+    ggtitle("Correlation to Target Var") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+In the above we can see that 5 of the variables show a negative relationship to the target while the rest show a positive relasionship.  The variable "base hits" seems to show the strongest relationship and probably represents a good starting place.  One interesting aspect of the positively correlated variables is that they are likely to show some multi-colinearity in the sense that HR, H, 2B etc all represent forms of hits and are thus presumably related.  We'll look at this later because it may require some data wrangling prior to computing correlations.
+
+#Data Preparation
+
+In terms of data prep, the first and most obvious thing that we need to do is fill in missing values.  We can see from some of the data show above that there are a few variables which have missing datapoints: 
+
+*Stolen Bases
+*Caught Stealing
+*Hit-By-Pitch
+*Double-plays
+*Strike-outs (Pitcher & batter)
+
+
+What's not clear is whether the data is legitimately missing (in which case some kind of imputation makes sense) or whether the missing values represent zeros.  My hunch is that hit-by-pitch, for example, might be a rare occurence where N/A values represent zeros.  Let's take a look!
+
+####Stolen Bases & caught Stealing
+
+```{r}
+hist(data.train$TEAM_BASERUN_SB)
+hist(data.train$TEAM_BASERUN_CS)
+```
+
+Given that these are both reasonably well populated series and that SB or CS being zero for an entire season seems unlikely based on our intuition about baseball, it appears as though there are some missing values here.  Both of these variables are reasonably skewed, so it might make sense to replace NAs with something like median rather than mean for these 2 variables.
+
+
+
+
+```{r}
+hist(data.train$TEAM_BATTING_HBP)
+
+```
+
+Players being hit by pitches appears to be reasonably normally distributed, however the event count is low, suggesting that this may be a uncommon occurrence.  I also note that there are no zeros in this variable which seems odd.  My hunch is that NAs should be converted to zeros in this cases as HBP is an uncommon occurence.
+
+```{r}
+hist(data.train$TEAM_FIELDING_DP)
+```
+
+Double-plays is another well-populated variable so I suspect that the missing data here are errors of ommission.  Given the normal-looking distribution, replacing the NAs with the mean seems like a reasonable choice.
+
+
+```{r}
+hist(data.train$TEAM_BATTING_SO)
+hist(data.train$TEAM_PITCHING_SO)
+```
+
+For batting strike-outs, the data is well-populated, bi-modal, and has a little bit of left-skew.  I propose that the median is likely the best choice for imputing values here.  For Pitching Strike-outs, we see an entirely different story!  Clearly there are some issues with outliers here, so we'll deal with this in the next section.
+
+
+
+
+Now we'll implement all the data changes discussed above in order to remove NAs from the set.
+
+Most of them are reasonably straightforward and don't require much of an explanation - we're replacing missing values with measures of central tendency or zeros.
+
+```{r}
+#replace na w/ median
+data.train$TEAM_BASERUN_SB [is.na(data.train$TEAM_BASERUN_SB )] <- median(data.train$TEAM_BASERUN_SB ,na.rm=T)
+data.train$TEAM_BASERUN_CS [is.na(data.train$TEAM_BASERUN_CS )] <- median(data.train$TEAM_BASERUN_CS ,na.rm=T)
+data.train$TEAM_BATTING_SO [is.na(data.train$TEAM_BATTING_SO )] <- median(data.train$TEAM_BATTING_SO ,na.rm=T)
+
+#...zeros
+data.train$TEAM_BATTING_HBP[is.na(data.train$TEAM_BATTING_HBP )] <- 0
+
+#...mean
+data.train$TEAM_FIELDING_DP[is.na(data.train$TEAM_FIELDING_DP )] <- mean(data.train$TEAM_FIELDING_DP ,na.rm=T)
+
+
+
+
+```
+
+
+Because the "Team Pitching SO" data looks so skewed, we'll do something a bit different here - Winzorization.  First we'll replace the NAs with the median value as the median will be less impacted by the outliers, then we winzorize the data to remove the outlisers.  Note that we'll also use this method for the "Team Pitching H" vatiable too, as it was identified above as likely erroneous.
+```{r}
+#we'll
+data.train$TEAM_PITCHING_SO[is.na(data.train$TEAM_PITCHING_SO )] <- median(data.train$TEAM_PITCHING_SO ,na.rm=T)
+
+data.train$TEAM_PITCHING_SO  <- Winsorize(data.train$TEAM_PITCHING_SO )
+
+data.train$TEAM_PITCHING_H[is.na(data.train$TEAM_PITCHING_H )] <- median(data.train$TEAM_PITCHING_H ,na.rm=T)
+
+data.train$TEAM_PITCHING_H  <- Winsorize(data.train$TEAM_PITCHING_H )
+
+hist(data.train$TEAM_PITCHING_SO )
+hist(data.train$TEAM_PITCHING_H )
+
+```
+
+Finally, we re-run our stats & plots to check and see whether we've fixed the data issues:
+
+```{r}
+
+stats <- psych::describe(data.train)
+stats
+
+#tidy the data
+data.train.tidy <- data.train %>%
+  gather()
+
+
+#build a boxplot from our reformatted data.train
+n<-ggplot(data=data.train.tidy, aes(x=key, y=value)) +
+  geom_boxplot()+
+  ggtitle("Looking for Outliers - Boxplot") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+n
+
+#plot the raw number of obs per col
+n<-ggplot(data=stats, aes(x=rownames(stats), y=n)) +
+  geom_bar(stat="identity") +
+  ggtitle("Number of Observations Per Variable") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+n
+```
+
+The data now looks much better behaved and we're ready to work with it.
+
+#Model Construction
+
+Here we're going to try a few things:
+
+### Just the Hits
+
+Next we'll look at all variables related to the batting team getting hits.  It stands to reason that the number of hits should be related to wins in some way.
+
+```{r}
+model_hits <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_BATTING_2B+TEAM_BATTING_3B+TEAM_BATTING_HR ,data = data.train)
+
+summary(model_hits)
+
+```
+
+What we end up with is a model that quite poor with an Adj R2 of only 20%.  Using the inverse each of these variables would be a significantly better idea!  ...so much for the hypothesis that hits = wins.  It's worth noting also that we probably have a multi-colinearity issue here where each of (2B,3B & HR) are a subset of H so we may not expect too much value-add by having all of these variables in the model.
+
+
+### All the Data
+
+Next we'll look at all the data/  Some people who I talk to believe that more data is always better.  In that sense, I've decided to start with a multi-regression containing all of the variables - it'll be useful for exploratory purposes if nothing else.
+
+```{r}
+
+model_all <- lm(formula = data.train$TARGET_WINS ~ .,data.train )
+summary(model_all)
+
+```
+
+Above we see that we get an adjusted r2 of 51% tells us that the model explains about half of the variance in the target variable.  Clearly we should try to do better here, tho it may be difficult.  We can see that Errors, Double play and Hit-By-Pitch are all significant at 5% or above, which is information that we may use later on.
+
+In terms of coefficients, we see some confusingthings here:  the signs of several of the coefficients are inverted vs. what intuition would suggest (Batting Homeruns is negative and Pitching homeruns is positive).  This could be cause by complex interactions between the many variables in the data set.  It is also a sign that this model might be less than ideal.
+
+
+
+My hypothesis does not appear to have been 
+
+
+
+### The Good and The Bad
+
+```{r}
+
+model_GandB <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_FIELDING_E,data = data.train)
+summary(model_GandB)
+```
+
+While we see a large degredation from the "Model_All", we do get a coherent output.  
+
+```{r}
+
+data.train.log <- data.train
+
+data.train.log[abs(stats$skew) > 2] <- log(data.train.log[abs(stats$skew) > 2])
+
+model_GandB <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_FIELDING_E,data = data.train.log)
+summary(model_GandB)
+```
+
+
+
+```
+
+#Model Selection
