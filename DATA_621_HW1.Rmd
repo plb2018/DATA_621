@@ -1,15 +1,21 @@
 ---
-title: "DATA 621 - Homework 1"
+title: "DATA 621 - Homework 1 - DRAFT"
 author: "Paul Britton"
-date: "2019-09-14"
+date: '2019-09-14'
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
 
+# Homework Report 1
+
+## Introduction
+
+As discussed in the meetup in week 2 (Sept 10), I've opted to produce this report as an R Notebook with full comment and explanation in-line, so to speak.
 
 
-```{r message=FALSE,warning=FALSE}
+```{r display = FALSE, message=FALSE,warning=FALSE}
 rm(list = ls(all.names = TRUE)) 
 library(psych)
 library(dplyr)
@@ -17,11 +23,18 @@ library(tidyr)
 library(ggplot2)
 library(corrr)
 library(DescTools)
+library(MASS)
+library(car)
+library(knitr)
+library(Metrics)
+
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+
 ```
 
 
 
-# Overview
+## Overview
 
 In this homework assignment, I will explore, analyze and model a data set containing approximately 2200
 records. Each record represents a professional baseball team from the years 1871 to 2006 inclusive. Each record
@@ -32,7 +45,7 @@ for the team. You can only use the variables given to you (or variables that you
 provided). 
 
 
-# Data Exploration
+## Data Exploration
 
 ### Load and Inspect the Data
 
@@ -42,8 +55,9 @@ The first objective is to load the data and evaluate what we're looking at and w
 #load the data from file
 data.train <- read.table("C:/Users/Paul/OneDrive - CUNY School of Professional Studies/CUNY/DATA 621/HW1/moneyball-training-data.csv",sep=',', header = 1, row.names = 1)
 
+
 #display the first few rows as a coherence check
-head(data.train,5)
+kable(head(data.train[,1:4],5))
 ```
 
 
@@ -52,11 +66,23 @@ The sample looks okay - we have 16 columns of data which appears to be well form
 
 ### Summary Statistics
 
+One of the very first things we want to do is inspect the target variable - TARGET_WINS in this case.  Having a sense for the distribution and character of the target helps provide some context for the problem and gives us some intuition about what "ballpark" our predicted values should fall into.  We'll look at a simple dot plot and histogram to start
+```{r}
+plot(data.train$TARGET_WINS,main="Target Variable")
+hist(data.train$TARGET_WINS, main="Distribution of Target Variable")
+```
+
+There is nothing in the above which cannot also be found in the table below.  These two plots, which by eye show a reasonably normally distributed target with an apparent mean and median of about 80 and a standard deviation of 15-20, provide us a quick visual of where our model predictions should likely end up.
+
+
+
 We'll use the psych::describe() function to get a comprehensive output of simple summary statistics.  There are numerous ways to get similar summaries in R but I find this one to be reasonably complete:
 
 ```{r}
 stats <- psych::describe(data.train)
-stats
+
+kable(stats[,1:6])
+kable(stats[,6:13])
 ```
 
 On the surface, we can see a few things from this summary:
@@ -115,7 +141,7 @@ We can see that a few of the columns, notably HBP (hit by pitch), have less than
 
 This information is also valuable in letting us know where we might need to perform some data-prep operations.
 
-###Correlation to Target
+### Correlation to Target
 
 Next we'll look at a visualization of the correlation of each variable to the target variable.  Note that I had originally tried to do this via the pairs() function but it produced an uncomfortably crowded plot so I decided to go with a bar plot instead
 
@@ -139,9 +165,9 @@ cor %>%
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-In the above we can see that 5 of the variables show a negative relationship to the target while the rest show a positive relasionship.  The variable "base hits" seems to show the strongest relationship and probably represents a good starting place.  One interesting aspect of the positively correlated variables is that they are likely to show some multi-colinearity in the sense that HR, H, 2B etc all represent forms of hits and are thus presumably related.  We'll look at this later because it may require some data wrangling prior to computing correlations.
+In the above we can see that 5 of the variables show a negative relationship to the target while the rest show a positive relasionship.  The variable "batting hits" seems to show the strongest relationship and probably represents a good starting place.  One interesting aspect of the positively correlated variables is that they are likely to show some multi-colinearity in the sense that HR, H, 2B etc all represent forms of hits and are thus presumably related.  We'll look at this later because it may require some data wrangling prior to computing correlations.
 
-#Data Preparation
+# Data Preparation
 
 In terms of data prep, the first and most obvious thing that we need to do is fill in missing values.  We can see from some of the data show above that there are a few variables which have missing datapoints: 
 
@@ -154,7 +180,7 @@ In terms of data prep, the first and most obvious thing that we need to do is fi
 
 What's not clear is whether the data is legitimately missing (in which case some kind of imputation makes sense) or whether the missing values represent zeros.  My hunch is that hit-by-pitch, for example, might be a rare occurence where N/A values represent zeros.  Let's take a look!
 
-####Stolen Bases & caught Stealing
+#### Stolen Bases & caught Stealing
 
 ```{r}
 hist(data.train$TEAM_BASERUN_SB)
@@ -196,15 +222,15 @@ Most of them are reasonably straightforward and don't require much of an explana
 
 ```{r}
 #replace na w/ median
-data.train$TEAM_BASERUN_SB [is.na(data.train$TEAM_BASERUN_SB )] <- median(data.train$TEAM_BASERUN_SB ,na.rm=T)
-data.train$TEAM_BASERUN_CS [is.na(data.train$TEAM_BASERUN_CS )] <- median(data.train$TEAM_BASERUN_CS ,na.rm=T)
-data.train$TEAM_BATTING_SO [is.na(data.train$TEAM_BATTING_SO )] <- median(data.train$TEAM_BATTING_SO ,na.rm=T)
+data.train$TEAM_BASERUN_SB[is.na(data.train$TEAM_BASERUN_SB)]<-median(data.train$TEAM_BASERUN_SB,na.rm=T)
+data.train$TEAM_BASERUN_CS[is.na(data.train$TEAM_BASERUN_CS)]<-median(data.train$TEAM_BASERUN_CS,na.rm=T)
+data.train$TEAM_BATTING_SO[is.na(data.train$TEAM_BATTING_SO)]<-median(data.train$TEAM_BATTING_SO,na.rm=T)
 
 #...zeros
-data.train$TEAM_BATTING_HBP[is.na(data.train$TEAM_BATTING_HBP )] <- 0
+data.train$TEAM_BATTING_HBP[is.na(data.train$TEAM_BATTING_HBP)]<-0
 
 #...mean
-data.train$TEAM_FIELDING_DP[is.na(data.train$TEAM_FIELDING_DP )] <- mean(data.train$TEAM_FIELDING_DP ,na.rm=T)
+data.train$TEAM_FIELDING_DP[is.na(data.train$TEAM_FIELDING_DP)]<-mean(data.train$TEAM_FIELDING_DP,na.rm=T)
 
 
 
@@ -212,19 +238,19 @@ data.train$TEAM_FIELDING_DP[is.na(data.train$TEAM_FIELDING_DP )] <- mean(data.tr
 ```
 
 
-Because the "Team Pitching SO" data looks so skewed, we'll do something a bit different here - Winzorization.  First we'll replace the NAs with the median value as the median will be less impacted by the outliers, then we winzorize the data to remove the outlisers.  Note that we'll also use this method for the "Team Pitching H" vatiable too, as it was identified above as likely erroneous.
+Because the "Team Pitching SO" data looks so skewed, we'll do something a bit different here - Winzorization.  First we'll replace the NAs with the median value as the median will be less impacted by the outliers, then we winzorize the data to remove the outliers.  Note that we'll also use this method for the "Team Pitching H" vatiable too, as it was identified above as likely erroneous.
 ```{r}
-#we'll
-data.train$TEAM_PITCHING_SO[is.na(data.train$TEAM_PITCHING_SO )] <- median(data.train$TEAM_PITCHING_SO ,na.rm=T)
 
-data.train$TEAM_PITCHING_SO  <- Winsorize(data.train$TEAM_PITCHING_SO )
+data.train$TEAM_PITCHING_SO[is.na(data.train$TEAM_PITCHING_SO)] <- median(data.train$TEAM_PITCHING_SO,na.rm=T)
 
-data.train$TEAM_PITCHING_H[is.na(data.train$TEAM_PITCHING_H )] <- median(data.train$TEAM_PITCHING_H ,na.rm=T)
+data.train$TEAM_PITCHING_SO <-Winsorize(data.train$TEAM_PITCHING_SO )
 
-data.train$TEAM_PITCHING_H  <- Winsorize(data.train$TEAM_PITCHING_H )
+data.train$TEAM_PITCHING_H[is.na(data.train$TEAM_PITCHING_H)] <- median(data.train$TEAM_PITCHING_H,na.rm=T)
 
-hist(data.train$TEAM_PITCHING_SO )
-hist(data.train$TEAM_PITCHING_H )
+data.train$TEAM_PITCHING_H<-Winsorize(data.train$TEAM_PITCHING_H)
+
+hist(data.train$TEAM_PITCHING_SO)
+hist(data.train$TEAM_PITCHING_H)
 
 ```
 
@@ -233,7 +259,8 @@ Finally, we re-run our stats & plots to check and see whether we've fixed the da
 ```{r}
 
 stats <- psych::describe(data.train)
-stats
+kable(stats[,1:6])
+kable(stats[,6:13])
 
 #tidy the data
 data.train.tidy <- data.train %>%
@@ -259,22 +286,47 @@ n
 
 The data now looks much better behaved and we're ready to work with it.
 
-#Model Construction
+## Model Construction
 
-Here we're going to try a few things:
+The firs thting we'll do here is split our training data into a "train" and a "test" set.
 
-### Just the Hits
 
-Next we'll look at all variables related to the batting team getting hits.  It stands to reason that the number of hits should be related to wins in some way.
+Here we split the in-sample data into a 75% training set and save 25% for validation:
 
 ```{r}
-model_hits <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_BATTING_2B+TEAM_BATTING_3B+TEAM_BATTING_HR ,data = data.train)
+sample <- floor(0.75 * nrow(data.train))
 
-summary(model_hits)
+## set the seed to make your partition reproducible
+set.seed(42)
+train_idx <- sample(seq_len(nrow(data.train)), size = sample)
+
+data.train.in  <- data.train[train_idx, ]
+data.train.out <- data.train[-train_idx, ]
 
 ```
 
-What we end up with is a model that quite poor with an Adj R2 of only 20%.  Using the inverse each of these variables would be a significantly better idea!  ...so much for the hypothesis that hits = wins.  It's worth noting also that we probably have a multi-colinearity issue here where each of (2B,3B & HR) are a subset of H so we may not expect too much value-add by having all of these variables in the model.
+
+Next we move on to building models - Here we're going to try a few things:
+
+### Just the Hits
+
+First we'll look at all variables related to the batting team getting hits.  It stands to reason that the number of hits should be related to wins in some way.
+
+```{r}
+model_hits <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_BATTING_2B+TEAM_BATTING_3B+TEAM_BATTING_HR ,data = data.train.in)
+
+summary(model_hits)
+hist(model_hits$residuals)
+qqnorm(model_hits$residuals)
+qqline(model_hits$residuals) 
+
+#make the predictions and compute rmse
+p <- predict(model_hits,data.train.out)
+model_hits.rmse <- rmse(data.train.out$TARGET_WINS,p)
+model_hits.rmse 
+```
+
+What we end up with is a model that is not particularly remarkable with an Adj R2 of only 20%.   ...so much for the hypothesis that hits = wins.  It's worth noting also that we probably have a multi-colinearity issue here where each of (2B,3B & HR) are a subset of H so we may not expect too much value-add by having all of these variables in the model.  The F-Stat is significant here, and the RMSE is ~14.  We'll see how this compares to subsequent models.
 
 
 ### All the Data
@@ -283,18 +335,24 @@ Next we'll look at all the data/  Some people who I talk to believe that more da
 
 ```{r}
 
-model_all <- lm(formula = data.train$TARGET_WINS ~ .,data.train )
+model_all <- lm(formula = data.train.in$TARGET_WINS ~ .,data.train.in)
 summary(model_all)
 
+hist(model_all$residuals)
+qqnorm(model_all$residuals)
+qqline(model_all$residuals) 
+
+p <- predict(model_all,data.train.out)
+model_all.rmse <- rmse(data.train.out$TARGET_WINS,p)
+model_all.rmse 
 ```
 
-Above we see that we get an adjusted r2 of 51% tells us that the model explains about half of the variance in the target variable.  Clearly we should try to do better here, tho it may be difficult.  We can see that Errors, Double play and Hit-By-Pitch are all significant at 5% or above, which is information that we may use later on.
+Above we see that we get an adjusted r2 of 31% tells us that the model explains about half of the variance in the target variable.  Clearly we should try to do better here, tho it may be difficult.  We can see that Errors, Double play and Hit-By-Pitch are all significant at 5% or above, which is information that we may use later on.
 
 In terms of coefficients, we see some confusingthings here:  the signs of several of the coefficients are inverted vs. what intuition would suggest (Batting Homeruns is negative and Pitching homeruns is positive).  This could be cause by complex interactions between the many variables in the data set.  It is also a sign that this model might be less than ideal.
 
+The RMSE has come down a bit as well, to 12.5, thus we can say that this model generally performs better than the previous one.
 
-
-My hypothesis does not appear to have been 
 
 
 
@@ -302,24 +360,187 @@ My hypothesis does not appear to have been
 
 ```{r}
 
-model_GandB <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_FIELDING_E,data = data.train)
+model_GandB <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_FIELDING_E,data = data.train.in)
 summary(model_GandB)
+
+hist(model_GandB$residuals)
+qqnorm(model_GandB$residuals)
+qqline(model_GandB$residuals) 
+
+p <- predict(model_GandB,data.train.out)
+model_GandB.rmse <- rmse(data.train.out$TARGET_WINS,p)
+model_GandB.rmse 
 ```
 
-While we see a large degredation from the "Model_All", we do get a coherent output.  
+While we see a large degredation from the "Model_All", we do get a coherent output in the sense that variables that should be intuitively related to a positive outcome appear show the expected relationship.  Also, the model is simple enough that it can be easily applied in a heuristic way by a human:  If a team hits well when at bat and makes few errors when fielding, they win more often.
+
+The RMSE degrades again here and this model does not seem to be as good as the pervious one.
+
+
+One final thing to explore is the log-transformation of some variables.  Here we take anything with a skew > 2 and perform a log transform.  The idea here is to linearize the input variables and see if we get a better prediction. We'll try with the last 2 models that we ran.
 
 ```{r}
 
-data.train.log <- data.train
+data.train.in.log <- data.train.in
+data.train.in.log[abs(stats$skew) > 2] <- log(data.train.in.log[abs(stats$skew) > 2])
 
-data.train.log[abs(stats$skew) > 2] <- log(data.train.log[abs(stats$skew) > 2])
+data.train.out.log <- data.train.out
+data.train.out.log[abs(stats$skew) > 2] <- log(data.train.out.log[abs(stats$skew) > 2])
 
-model_GandB <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_FIELDING_E,data = data.train.log)
+
+model_GandB <- lm(formula = TARGET_WINS ~ TEAM_BATTING_H+TEAM_FIELDING_E,data = data.train.in.log)
 summary(model_GandB)
+
+hist(model_GandB$residuals)
+qqnorm(model_GandB$residuals)
+qqline(model_GandB$residuals) 
+
+p <- predict(model_GandB,data.train.out.log)
+rmse(data.train.out$TARGET_WINS,p)
+
+```
+
+```{r}
+
+data.train.in.log[sapply(data.train.in.log,is.infinite)] <-0
+
+
+model_all.log <- lm(formula = data.train.in.log$TARGET_WINS ~ .,data.train.in.log )
+summary(model_all.log)
+
+hist(model_all.log$residuals)
+qqnorm(model_all.log$residuals)
+qqline(model_all.log$residuals) 
+
+data.train.out.log[sapply(data.train.out.log,is.infinite)] <-0
+
+p <- predict(model_all.log,data.train.out.log)
+rmse(data.train.out$TARGET_WINS,p)
+
+
+```
+
+As we can see above, in this case, there's no major advantage to performing log transforms on these variables in the way that was performed here.  The adjusted r2, F-stat and RMSE are all approximately the same as for the models with the unadjusted data.
+
+
+
+
+Finally, we'll look at a step-wise model selection process to see if we can come up with an even better model
+
+
+```{r eval = TRUE}
+
+
+#stepwise search, looking backwards...i.e. starting with all
+#vars and dropping
+model_best <- stepAIC(model_all, direction="backward",trace=F)
+
+
+summary(model_best)
+
+hist(model_best$residuals)
+qqnorm(model_best$residuals)
+qqline(model_best$residuals) 
+
+
+p <- predict(model_best,data.train.out)
+model_best.rmse <- rmse(data.train.out$TARGET_WINS,p)
+model_best.rmse
+```  
+
+In this case, we don't seem to get much improvement from our "model all", even with backward selection.  
+
+
+
+## Model Selection
+
+All things considered, this is a difficult model selection process as there is no model which obviously stands out as superior.  Based on the below, the "All" model is probably be optimal choice.  Even though it is slightly inferior to "best" model, it does not involve a stepwise search which likely increases robustness on outsample data.  
+
+```{r eval = TRUE}
+
+perfr2 <- c(summary(model_hits)$adj.r.squared,
+          summary(model_all)$adj.r.squared,
+          summary(model_GandB)$adj.r.squared,
+          summary(model_best)$adj.r.squared)
+
+perfrmse <- c(model_hits.rmse,
+          model_all.rmse,
+          model_GandB.rmse,
+          model_best.rmse)
+
+
+names <- c("Hits","All","Good and Bad","Best")
+
+
+barplot(perfr2, names.arg = names, ylab = "Adjusted R-Squared", main = "Model Comparison -Adj R-Squared")
+barplot(perfrmse, names.arg = names, ylab = "Adjusted R-Squared", main = "Model Comparison -RMSE")
+
+```  
+
+
+And finally, we'll check the model against the test data.  In order to get results consitent with our model, we will first need to transform the data in the same way as we did for our training set:
+
+
+```{r eval = TRUE}
+#load the data from file
+data.test <- read.table("C:/Users/Paul/OneDrive - CUNY School of Professional Studies/CUNY/DATA 621/HW1/moneyball-evaluation-data.csv",sep=',', header = 1, row.names = 1)
+
+
+
+#apply all the same fixes as were made in-sample
+data.test$TEAM_BASERUN_SB [is.na(data.test$TEAM_BASERUN_SB )] <- median(data.test$TEAM_BASERUN_SB ,na.rm=T)
+data.test$TEAM_BASERUN_CS [is.na(data.test$TEAM_BASERUN_CS )] <- median(data.test$TEAM_BASERUN_CS ,na.rm=T)
+data.test$TEAM_BATTING_SO [is.na(data.test$TEAM_BATTING_SO )] <- median(data.test$TEAM_BATTING_SO ,na.rm=T)
+data.test$TEAM_BATTING_HBP[is.na(data.test$TEAM_BATTING_HBP )] <- 0
+data.test$TEAM_FIELDING_DP[is.na(data.test$TEAM_FIELDING_DP )] <- mean(data.test$TEAM_FIELDING_DP ,na.rm=T)
+data.test$TEAM_PITCHING_SO[is.na(data.test$TEAM_PITCHING_SO )] <- median(data.test$TEAM_PITCHING_SO ,na.rm=T)
+data.test$TEAM_PITCHING_SO  <- Winsorize(data.test$TEAM_PITCHING_SO )
+data.test$TEAM_PITCHING_H[is.na(data.test$TEAM_PITCHING_H )] <- median(data.test$TEAM_PITCHING_H ,na.rm=T)
+data.test$TEAM_PITCHING_H  <- Winsorize(data.test$TEAM_PITCHING_H )
+
 ```
 
 
+Now we have a consistently modified set, so we can apply the model to the new outsample data:
 
-```
+We can see below from the first 2 plots that our predictions are roughly in line with the sample data.  The second two plots show relative comparisons of the output, first by means of histogram and second by means of a density plot.  Generally speaking, our model appears to have performed reasonably well within the context of the insample data!
 
-#Model Selection
+
+```{r eval = TRUE}
+p <- predict(model_all, data.test)
+
+
+r1 <- data.frame(data = data.train[,1])
+r1$id <- "insample"
+
+r2 <- data.frame(data = p)
+r2$id <- "outsample"
+
+
+r <- rbind(r1,r2)
+
+
+plot(p,main = "Test Data Predictions")
+hist(p, main = "Distribution of Test Data Predictions")
+
+ggplot(r, aes(data,fill=id)) +
+  geom_histogram(alpha=0.5)+
+  ggtitle("Comparing Wins - Histogram") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+ggplot(r, aes(data,fill=id)) +
+  geom_density(alpha=0.5)+
+  ggtitle("Comparing Wins - Density") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+
+kable(p,col.names = c("Predicted Value"))
+
+write.csv(p,file="data621_hw1_predictions.csv")
+``` 
+
+## Conclusion
+
+We can see from the above that the "model all" performed best out of those selected and tested.  Further, we see that the values it outputs are consistent with the values in the training set (i.e. the dustributions of outcomes look very similar).  For this exercise it was not possible to check the accuracy and recall of the model as no outsample target data was provided.
