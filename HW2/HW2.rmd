@@ -1,0 +1,179 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+rm(list = ls(all.names = TRUE)) 
+library(knitr)
+library(caret)
+
+```
+# 1
+
+```{r}
+rm(list = ls(all.names = TRUE)) 
+
+p <- "C:/Users/Paul/OneDrive - CUNY School of Professional Studies/CUNY/DATA 621/HW2/classification-output-data.csv"
+
+data <- read.csv(p)
+```
+
+```{r}
+cm <- table(data$class,data$scored.class)
+colnames(cm)<-c("Predicted Negative","Predicted Positive")
+rownames(cm)<-c("Actual Negative","Actual Positive")
+kable(cm)
+
+```
+
+
+```{r}
+
+probs <- function(inputData) {
+  
+  inputData$TP <- inputData[,1] == 1 & inputData[,2] == 1
+  inputData$TN <- inputData[,1] == 0 & inputData[,2] == 0
+  inputData$FP <- inputData[,1] == 0 & inputData[,2] == 1
+  inputData$FN <- inputData[,1] == 1 & inputData[,2] == 0
+  
+  out <- list(TP=length(which(inputData[,3])),
+              TN=length(which(inputData[,4])),
+              FP=length(which(inputData[,5])),
+              FN=length(which(inputData[,6])))
+    
+  return(out)
+  }
+
+
+
+p<-probs(data[,9:10])
+
+#meow$TP <- meow[,1] == 1 & meow[,2] == 1
+
+```
+
+# Questions 3-8
+
+```{r}
+
+accuracy <- function(data) {
+  p <- probs(data[,9:10])
+  result <- (p$TP + p$TN)/(p$TP + p$FP + p$TN + p$FN)
+  return(result)
+}
+
+
+error.rate <- function(data) {
+    p <- probs(data[,9:10])
+    result <- (p$FP + p$FN)/(p$TP + p$FP + p$TN + p$FN)
+  return(result)
+}
+
+
+precision <- function(data) {
+    p <- probs(data[,9:10])
+    result <- (p$TP )/(p$TP + p$FP)
+  return(result)
+}
+
+sensitivity <- function(data) {
+    p <- probs(data[,9:10])
+    result <- (p$TP)/(p$TP +p$FN)
+  return(result)
+}
+
+specificity <- function(data) {
+    p <- probs(data[,9:10])
+    result <- (p$TN)/(p$FP + p$TN)
+  return(result)
+}
+
+f1.score <- function(data) {
+    p <- probs(data[,9:10])
+    result <- 2* precision(data) * sensitivity(data) /( precision(data) + sensitivity(data))
+  return(result)
+}
+
+all_metrics <- function(data){
+    
+  metrics <- list(accuracy=accuracy(data),
+              error.rate=error.rate(data),
+              precision=precision(data),
+              sensitivity=sensitivity(data),
+              specificity=specificity(data),
+              f1.score=f1.score(data))
+
+  metrics <- lapply(metrics,round,4)
+  
+  return(t(metrics)) 
+} 
+
+```
+
+
+# Question 9
+
+I find this particular question easier to think about if we rearrange the F1 Score formula like so:
+
+
+$$
+f1 = \frac{2*sensitivity*precision}{sensitivity+precision} = \frac{2}{(sensitivity^{-1} + precision^{-1})}
+$$
+
+Because we know that sensitivity and precision are both bounded by 1 and zero, we can see that the minimum value for each term in the denominator is 1 i.e.: $1^{-1} = 1$ the minimum value for the denominator is 2.  Given that the min value for the denominator is 2, the maximum output for the f1 score is $\frac{2}{1+1}=1$.  As sensitivity and precision get small, the denominator increases and the output of the f1 equation approaches zero.
+
+
+# Question 10
+
+# Question 11
+
+```{r}
+m <- all_metrics(data)
+kable(m)
+```
+
+# Question 12
+
+# Question 13
+
+
+ 
+```{r}
+a <- 0
+b <- 0
+
+f1.lower <- 2*a*b / (a+b)
+
+a <- 1
+b <- 1
+
+f1.upper <- 2*a*b / (a+b)
+
+f1.lower
+f1.upper
+
+p
+
+0.1^-1
+
+```
+
+
+
+```{r}
+
+inputs = data[,9:10]
+
+accuracy(data)
+
+error.rate(data)
+
+accuracy(data)+error.rate(data)
+
+precision(data)
+sensitivity(data)
+
+
+```
