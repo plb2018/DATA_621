@@ -8,48 +8,47 @@ output: html_notebook
 rm(list = ls(all.names = TRUE)) 
 library(knitr)
 library(caret)
+library(pROC)
 
 ```
-# 1
+# Question 1
+
+The data has been downloaded and moved to github in the interest of reproducibility.
+
+# Question 2
 
 ```{r}
 rm(list = ls(all.names = TRUE)) 
 
-p <- "C:/Users/Paul/OneDrive - CUNY School of Professional Studies/CUNY/DATA 621/HW2/classification-output-data.csv"
+inputDataPath <- "https://raw.githubusercontent.com/plb2018/DATA_621/master/HW2/classification-output-data.csv"
 
-data <- read.csv(p)
+data <- read.csv(inputDataPath)
 ```
 
 ```{r}
-cm <- table(data$class,data$scored.class)
-colnames(cm)<-c("Predicted Negative","Predicted Positive")
-rownames(cm)<-c("Actual Negative","Actual Positive")
+cm <- table(data$scored.class,data$class)
+colnames(cm)<-c("Actual Negative","Actual Positive")
+rownames(cm)<-c("Predicted Negative","Predicted Positive")
 kable(cm)
 
 ```
 
+Here we create a helper function that computes TP, TN, FP and FN, which are inputs for questions 3-8
 
 ```{r}
 
 probs <- function(inputData) {
-  
-  inputData$TP <- inputData[,1] == 1 & inputData[,2] == 1
-  inputData$TN <- inputData[,1] == 0 & inputData[,2] == 0
-  inputData$FP <- inputData[,1] == 0 & inputData[,2] == 1
-  inputData$FN <- inputData[,1] == 1 & inputData[,2] == 0
-  
-  out <- list(TP=length(which(inputData[,3])),
-              TN=length(which(inputData[,4])),
-              FP=length(which(inputData[,5])),
-              FN=length(which(inputData[,6])))
-    
-  return(out)
+  cm <- as.list(table(inputData[,2],inputData[,1]))
+  names(cm) <- c("TN","FP","FN","TP")
+  return(cm)
   }
 
 
 
 p<-probs(data[,9:10])
+p
 
+#kable(t(p))
 #meow$TP <- meow[,1] == 1 & meow[,2] == 1
 
 ```
@@ -78,13 +77,17 @@ precision <- function(data) {
   return(result)
 }
 
-sensitivity <- function(data) {
+sens <- function(data) {
     p <- probs(data[,9:10])
-    result <- (p$TP)/(p$TP +p$FN)
+    print(paste0("probs:", p))
+    print(paste0("TP:", p$TP))
+    print(paste0("FN:", p$FN))
+    print(paste0("result:", p$TP/(p$TP +p$FN)))
+    result <- p$TP/(p$TP +p$FN)
   return(result)
 }
 
-specificity <- function(data) {
+spec<- function(data) {
     p <- probs(data[,9:10])
     result <- (p$TN)/(p$FP + p$TN)
   return(result)
@@ -92,7 +95,7 @@ specificity <- function(data) {
 
 f1.score <- function(data) {
     p <- probs(data[,9:10])
-    result <- 2* precision(data) * sensitivity(data) /( precision(data) + sensitivity(data))
+    result <- 2* precision(data) * sens(data) /( precision(data) + sens(data))
   return(result)
 }
 
@@ -101,14 +104,17 @@ all_metrics <- function(data){
   metrics <- list(accuracy=accuracy(data),
               error.rate=error.rate(data),
               precision=precision(data),
-              sensitivity=sensitivity(data),
-              specificity=specificity(data),
+              sensitivity=sens(data),
+              specificity=spec(data),
               f1.score=f1.score(data))
 
   metrics <- lapply(metrics,round,4)
   
   return(t(metrics)) 
 } 
+
+sens(data)
+spec(data)
 
 ```
 
@@ -127,36 +133,59 @@ Because we know that sensitivity and precision are both bounded by 1 and zero, w
 
 # Question 10
 
+THIS NEEDS WORK STILL!!!
+
+```{r}
+
+myROC <- function(x,y){
+  x <- x[order(y, decreasing=TRUE)]
+  TP = cumsum(x)/sum(x)
+  FP = cumsum(!x)/sum(!x)
+  
+  df <- data.frame(TP, FP)
+  diffFP <- c(diff(FP), 0)
+  diffTP <- c(diff(TP), 0)
+  auc <- sum(TP * diffFP) + sum(diffTP * diffFP)/2
+  
+  plot(df$TP)
+  
+  return(c(df=df, auc = auc))
+}
+
+r <- myROC(data$class, data$scored.probability)
+
+
+```
+
 # Question 11
 
 ```{r}
-m <- all_metrics(data)
+m <-  all_metrics(data)
 kable(m)
 ```
 
 # Question 12
+
+```{r}
+
+predicted <- as.factor(data$scored.class)
+actual <- as.factor(data$class)
+
+confusionMatrix(data = predicted , reference = actual ,positive="1")
+
+sensitivity(data = predicted, reference = actual, positive = "1", negative = "0")
+specificity(data = predicted, reference = actual, positive = "1", negative = "0")
+
+
+```
 
 # Question 13
 
 
  
 ```{r}
-a <- 0
-b <- 0
 
-f1.lower <- 2*a*b / (a+b)
-
-a <- 1
-b <- 1
-
-f1.upper <- 2*a*b / (a+b)
-
-f1.lower
-f1.upper
-
-p
-
-0.1^-1
+roc(data$class,data$scored.probability,plot=T)
 
 ```
 
